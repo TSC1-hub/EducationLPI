@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EduStudio STEM - Learning Planet Institute</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lpi: {
+              yellow: '#FFD100',
+              yellowHover: '#E6BC00',
+              navy: '#0C131F',
+              navyLight: '#182335',
+              slate: '#1E293B',
+              pink: '#FF2E63',
+              pinkHover: '#E02251',
+              cyan: '#00D2D3',
+              lightBg: '#F8FAFC'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .canvas-grid {
+      background-size: 24px 24px;
+      background-image: radial-gradient(circle, #cbd5e1 1.5px, transparent 1.5px);
+    }
+    
+    .draggable-widget {
+      position: absolute;
+      box-shadow: 0 10px 25px -5px rgba(12, 19, 31, 0.12), 0 8px 10px -6px rgba(12, 19, 31, 0.06);
+      transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .widget-handle { cursor: grab; }
+    .widget-handle:active { cursor: grabbing; }
+
+    .rich-editor [contenteditable="true"]:empty:before {
+      content: attr(placeholder);
+      color: #94a3b8;
+      pointer-events: none;
+      display: block;
+    }
+
+    .activity-bubble {
+      background: #ffffff;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 1.25rem;
+      box-shadow: 0 4px 15px -2px rgba(12, 19, 31, 0.05);
+      transition: all 0.2s ease-in-out;
+    }
+    .activity-bubble:hover {
+      border-color: #00D2D3;
+      box-shadow: 0 8px 25px -5px rgba(0, 210, 211, 0.15);
+    }
+
+    .sticky-note {
+      box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.1);
+      transform: rotate(-1deg);
+    }
+
+    #drawing-canvas, #student-drawing-canvas {
+      position: absolute; top: 0; left: 0; pointer-events: none; z-index: 25;
+    }
+    #drawing-canvas.active, #student-drawing-canvas.active { pointer-events: auto; cursor: crosshair; }
+
+    @media print {
+      body * { visibility: hidden; }
+      #fiche-pedagogique-print, #fiche-pedagogique-print * { visibility: visible; }
+      #fiche-pedagogique-print { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; padding: 0; }
+      .no-print { display: none !important; }
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-lpi-lightBg text-slate-800 font-sans flex h-screen overflow-hidden relative">
+
+  <!-- ==================== BARRE LATÉRALE (CHARTE LPI) ==================== -->
+  <aside class="w-72 bg-lpi-navy text-slate-300 flex flex-col justify-between p-4 flex-shrink-0 z-30 no-print">
+    <div class="space-y-6">
+      
+      <!-- LOGO LEARNING PLANET INSTITUTE -->
+      <div class="flex items-center gap-3 px-2 py-3 border-b border-slate-800">
+        <div class="bg-lpi-yellow text-lpi-navy p-2.5 rounded-xl font-extrabold flex items-center justify-center shadow-lg shadow-lpi-yellow/20">
+          <i class="fa-solid fa-planet text-xl"></i>
+        </div>
+        <div>
+          <h1 class="font-black text-white text-sm tracking-wide leading-tight">Learning Planet</h1>
+          <p class="text-[11px] font-bold text-lpi-yellow tracking-wider uppercase">Institute</p>
+        </div>
+      </div>
+
+      <!-- NAVIGATION PRINCIPALE PAR ÉTAPES D'INGÉNIERIE -->
+      <nav class="space-y-1.5">
+        <button onclick="switchTab('studio')" id="btn-studio" class="nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold bg-lpi-yellow text-lpi-navy transition shadow-md">
+          <i class="fa-solid fa-sliders"></i> 1. Studio Cadrage & BO
+        </button>
+
+        <button onclick="switchTab('canva')" id="btn-canva" class="nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold text-slate-400 hover:bg-lpi-navyLight hover:text-white transition">
+          <i class="fa-solid fa-border-all text-lpi-yellow"></i> 2. Studio Canva Miro (LMS)
+        </button>
+
+        <button onclick="switchTab('fiche')" id="btn-fiche" class="nav-btn w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold text-slate-400 hover:bg-lpi-navyLight hover:text-white transition">
+          <i class="fa-solid fa-file-contract text-lpi-cyan"></i> 3. Fiche Ingénierie (Word/PDF)
+        </button>
+
+        <div class="pt-6 pb-2 px-3 flex items-center justify-between text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
+          <span>Séquences Publiées</span>
+          <span id="published-count" class="bg-slate-800 text-lpi-yellow px-2 py-0.5 rounded-full text-[10px]">0</span>
+        </div>
+      </nav>
+    </div>
+
+    <!-- CONFIGURATION MISTRAL AI & PIED DE BARRE LATÉRALE -->
+    <div class="space-y-3">
+      <div class="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 text-xs text-slate-400 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-white"><i class="fa-solid fa-brain text-lpi-cyan mr-1.5"></i>Mistral AI API</span>
+          <span id="api-status-badge" class="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full">Clé non saisie</span>
+        </div>
+        <input type="password" id="mistral-api-key" placeholder="Clé API Mistral (sk-...)" onchange="saveMistralKey(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-[10px] text-white outline-none focus:border-lpi-yellow">
+      </div>
+
+      <div class="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/60 text-xs text-slate-400 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="font-bold text-white"><i class="fa-solid fa-earth-americas text-lpi-cyan mr-1.5"></i>LPI EduLab</span>
+          <span class="text-[10px] bg-lpi-pink/20 text-lpi-pink font-bold px-2 py-0.5 rounded-full">BO + Socle</span>
+        </div>
+        <p class="text-[11px] leading-relaxed text-slate-400">Apprentissage par la recherche, compétences transversales et démarches scientifiques.</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== CONTENU PRINCIPAL DE L'APPLICATION ==================== -->
+  <main class="flex-1 overflow-y-auto p-6 lg:p-8 relative">
+
+    <!-- ==================== ÉTAPE 1 : STUDIO DE CONCEPTION & CADRAGE BO ==================== -->
+    <div id="tab-studio" class="tab-content max-w-6xl mx-auto space-y-8">
+      
+      <!-- EN-TÊTE LPI -->
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider bg-lpi-yellow/20 text-slate-900 px-3 py-1 rounded-full border border-lpi-yellow/40">
+            <i class="fa-solid fa-wand-magic-sparkles mr-1 text-lpi-pink"></i> Co-pilotage Pédagogique LPI
+          </span>
+          <h1 class="text-2xl font-black text-lpi-navy mt-2">Cadrage de Parcours & Référentiel BO Exhaustif</h1>
+          <p class="text-slate-500 text-sm">Compétences Générales (Socle Commun) + Compétences Disciplinaires du Bulletin Officiel.</p>
+        </div>
+        <button onclick="publishProject()" class="bg-lpi-yellow hover:bg-lpi-yellowHover text-lpi-navy font-black px-6 py-3 rounded-xl shadow-md flex items-center gap-2.5 text-sm transition transform hover:-translate-y-0.5">
+          <i class="fa-solid fa-rocket"></i> Publier la Séquence
+        </button>
+      </div>
+
+      <!-- FORMULAIRE DE CADRAGE -->
+      <div class="grid grid-cols-12 gap-6">
+        
+        <div class="col-span-12 lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+          <h2 class="text-lg font-black text-lpi-navy border-b pb-3 flex items-center gap-2.5">
+            <i class="fa-solid fa-circle-info text-lpi-pink"></i> Informations du Projet & Alignement BO
+          </h2>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="col-span-2 sm:col-span-1">
+              <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Titre du Projet STEM</label>
+              <input type="text" id="project-title" value="Conception d'une Station Météo Connectée" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-lpi-yellow outline-none">
+            </div>
+            <div class="col-span-2 sm:col-span-1">
+              <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Niveau & Cycle Scolaire</label>
+              <select id="project-level" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-lpi-yellow outline-none">
+                <option value="Cycle 4 (5ème, 4ème, 3ème)" selected>Cycle 4 (5ème, 4ème, 3ème) - Collège</option>
+                <option value="Cycle 3 (CM1, CM2, 6ème)">Cycle 3 (CM1, CM2, 6ème)</option>
+                <option value="Lycée Seconde SNT">Lycée Seconde - SNT / Sciences</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- COMPÉTENCES BO & GÉNÉRALES SÉLECTIONNÉES -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="text-xs font-bold uppercase text-slate-500">
+                Compétences Générales & Disciplinaires BO (<span id="selected-bo-count" class="text-lpi-pink font-black">0</span>)
+              </label>
+              <div class="flex gap-2">
+                <button onclick="autoSelectBO()" class="text-xs bg-lpi-yellow/20 hover:bg-lpi-yellow/40 text-lpi-navy font-bold px-3 py-1.5 rounded-lg border border-lpi-yellow/50 transition flex items-center gap-1">
+                  <i class="fa-solid fa-wand-magic-sparkles text-lpi-pink"></i> Pré-cocher via IA
+                </button>
+                <button onclick="openBOModal()" class="text-xs bg-lpi-navy hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                  <i class="fa-solid fa-book-open text-lpi-yellow"></i> Explorer le BO Complet
+                </button>
+              </div>
+            </div>
+
+            <div id="selected-bo-badges" class="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[70px] items-center"></div>
+          </div>
+
+          <!-- OBJECTIFS BLOOM AVEC ASSISTANCE IA -->
+          <div>
+            <div class="flex justify-between items-center mb-1.5">
+              <label class="text-xs font-bold uppercase text-slate-500">Objectifs Pédagogiques (Compétences visées)</label>
+              <button onclick="askBloomHelp()" class="text-xs text-lpi-pink hover:underline font-bold flex items-center gap-1">
+                <i class="fa-solid fa-sparkles"></i> Analyser avec Bloom
+              </button>
+            </div>
+            <textarea id="project-objectives" rows="3" class="w-full border border-slate-300 rounded-xl p-3 text-sm text-slate-800 focus:ring-2 focus:ring-lpi-yellow outline-none leading-relaxed">1. [Appliquer] Programmer une carte microcontrôleur pour lire un capteur DHT11.
+2. [Analyser] Exploiter les séries de données météorologiques sous forme de graphiques.
+3. [Créer] Modéliser et imprimer en 3D un boîtier protecteur sur-mesure.</textarea>
+          </div>
+        </div>
+
+        <!-- LOGISTIQUE ET MATÉRIEL -->
+        <div class="col-span-12 lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-5">
+          <h2 class="text-lg font-black text-lpi-navy border-b pb-3 flex items-center gap-2.5">
+            <i class="fa-solid fa-sliders text-lpi-pink"></i> Logistique, Matériel & STEM
+          </h2>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Volume Horaire Total</label>
+            <input type="text" id="project-duration" value="12 heures (4 séances de 3h)" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Livrable Final Attendu</label>
+            <input type="text" id="project-deliverable" value="Station Météo Fonctionnelle + Poster Scientifique" class="w-full border border-slate-300 rounded-xl p-2.5 text-sm font-bold outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-500 mb-1.5">Matériel & Équipements Requis</label>
+            <textarea id="project-material" rows="3" class="w-full border border-slate-300 rounded-xl p-3 text-xs font-mono text-slate-700 outline-none">- Cartes Micro:bit / Arduino UNO
+- Capteurs de température/humidité DHT11
+- Imprimante 3D (Filament PLA)
+- Ordinateurs avec Thonny Python / Mu Editor</textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-500 mb-2">Pondération des Piliers STEM</label>
+            <div class="grid grid-cols-4 gap-2 text-center text-xs font-bold">
+              <div class="p-2 bg-blue-50 text-blue-800 rounded-xl border border-blue-200">🔬 Science<br><span class="text-xs font-normal">25%</span></div>
+              <div class="p-2 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-200">💻 Techno<br><span class="text-xs font-normal">35%</span></div>
+              <div class="p-2 bg-amber-50 text-amber-800 rounded-xl border border-amber-200">🛠️ Ingénierie<br><span class="text-xs font-normal">25%</span></div>
+              <div class="p-2 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200">📐 Maths<br><span class="text-xs font-normal">15%</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SÉANCES ET CO-PILOTE BLOOM -->
+      <div class="grid grid-cols-12 gap-6">
+
+        <div class="col-span-12 lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+          <div class="flex justify-between items-center border-b pb-3">
+            <div>
+              <h2 class="text-lg font-black text-lpi-navy flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-lpi-pink"></i> Séquence des Séances d'Activités
+              </h2>
+              <p class="text-xs text-slate-500">Ajoutez des séances et utilisez les boutons magiques IA.</p>
+            </div>
+            <button onclick="addSession()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-plus text-lpi-pink"></i> Ajouter une séance
+            </button>
+          </div>
+
+          <div id="sessions-list" class="space-y-4"></div>
+        </div>
+
+        <!-- CO-PILOTE BLOOM IA -->
+        <div class="col-span-12 lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[540px]">
+          <div class="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-lpi-yellow text-lpi-navy flex items-center justify-center font-black text-sm">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-slate-800 text-sm">Co-pilote Pédagogique</h3>
+                <p class="text-[11px] text-slate-500">Taxonomie de Bloom & Formulations</p>
+              </div>
+            </div>
+            <span class="text-[10px] bg-lpi-pink/10 text-lpi-pink font-bold px-2 py-0.5 rounded-full">LPI AI</span>
+          </div>
+
+          <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
+            <div class="bg-slate-50 border border-slate-200 text-slate-800 p-3 rounded-xl leading-relaxed">
+              👋 <strong>Bienvenue au Learning Planet Institute !</strong> Je vous accompagne sur la formulation de vos objectifs de Bloom et l'alignement BO. Cliquez sur <em>"Analyser avec Bloom"</em> pour évaluer la séquence.
+            </div>
+          </div>
+
+          <!-- GRILLE BLOOM REGULARISÉE -->
+          <div class="px-4 py-2 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-1">
+            <span class="text-[10px] font-bold text-slate-400 uppercase w-full">Grille Taxonomie de Bloom :</span>
+            <span class="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">1. Connaître</span>
+            <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">2. Comprendre</span>
+            <span class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">3. Appliquer</span>
+            <span class="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">4. Analyser</span>
+            <span class="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-bold">5. Évaluer</span>
+            <span class="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold">6. Créer</span>
+          </div>
+
+          <div class="p-3 border-t border-slate-200 flex gap-2">
+            <input type="text" id="chat-input" placeholder="Posez une question sur Bloom ou le BO..." onkeypress="if(event.key==='Enter') sendChatMessage()" class="flex-1 border border-slate-300 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-lpi-yellow outline-none">
+            <button onclick="sendChatMessage()" class="bg-lpi-navy hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ==================== ÉTAPE 2 : STUDIO CANVA LMS INTERACTIF ==================== -->
+    <div id="tab-canva" class="tab-content flex-1 flex flex-col overflow-hidden hidden -m-6 lg:-m-8 h-[calc(100vh-1px)]">
+      
+      <!-- BANDEAU SÉANCE & MINUTEUR -->
+      <div class="bg-lpi-navy border-b border-slate-800 px-6 py-2.5 flex items-center justify-between text-white z-20 flex-shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+            <i class="fa-solid fa-layer-group text-lpi-yellow"></i> Séance :
+          </span>
+          <select id="session-select" onchange="switchSession(this.value)" class="bg-slate-800 border border-slate-700 text-white font-bold text-xs rounded-xl px-3 py-1.5 outline-none">
+            <option value="s1">Séance 1 : Câblage & Relevés Météo</option>
+            <option value="s2">Séance 2 : Programmation Python</option>
+          </select>
+          <button onclick="addNewSessionPrompt()" class="bg-white/10 hover:bg-white/20 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1">
+            <i class="fa-solid fa-plus text-lpi-yellow"></i> Nouvelle Séance
+          </button>
+        </div>
+
+        <div class="flex items-center gap-3 bg-slate-800 border border-slate-700 px-3 py-1 rounded-xl">
+          <i class="fa-solid fa-stopwatch text-lpi-yellow text-sm"></i>
+          <span id="timer-display" class="font-mono font-bold text-sm text-white">05:00</span>
+          <button onclick="toggleTimer()" id="btn-timer-toggle" class="bg-lpi-pink text-white text-[10px] font-bold px-2 py-0.5 rounded-md">Démarrer</button>
+          <button onclick="resetTimer()" class="text-slate-400 hover:text-white text-[10px]"><i class="fa-solid fa-rotate-left"></i></button>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="reorderWidgetsByPassage()" class="bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-arrow-down-1-9 text-lpi-yellow"></i> Réordonner par puces
+          </button>
+
+          <button onclick="openStudentPreviewModal()" class="bg-lpi-cyan text-lpi-navy font-black px-4 py-1.5 rounded-xl text-xs flex items-center gap-2 shadow-md">
+            <i class="fa-solid fa-up-right-from-square"></i> Aperçu Élève Miroir (Même Canva)
+          </button>
+        </div>
+      </div>
+
+      <!-- PROMPT IA GENERATEUR DE SCENE (MISTRAL AI) -->
+      <div class="bg-gradient-to-r from-slate-900 via-lpi-navy to-slate-900 p-2.5 border-b border-slate-800 text-white flex items-center gap-3 z-20 shadow-md">
+        <div class="flex items-center gap-2 font-black text-xs text-lpi-yellow whitespace-nowrap">
+          <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i>
+          <span>Générateur d'Architecture IA (Mistral) :</span>
+        </div>
+
+        <div class="flex-1 flex items-center bg-white/10 border border-white/20 rounded-xl px-3 py-1">
+          <input type="text" id="prompt-architecture-input" placeholder="Ex: Modélise une vidéo de chat mignon avec un quiz style Kahoot..." class="w-full bg-transparent text-xs text-white placeholder-slate-400 outline-none">
+          <button onclick="generateCanvaArchitectureFromPrompt()" id="btn-generate-architecture" class="bg-lpi-yellow hover:bg-lpi-yellowHover text-lpi-navy font-bold px-4 py-1 rounded-lg text-xs ml-2 whitespace-nowrap transition shadow-sm flex items-center gap-1.5">
+            <i class="fa-solid fa-bolt"></i> Générer la Scène
+          </button>
+        </div>
+      </div>
+
+      <!-- BARRE D'OUTILS DE LA PALETTE COMPLÈTE DES 7 WIDGETS -->
+      <div id="canva-editor-toolbar" class="bg-white border-b border-slate-200 px-6 py-2 flex items-center justify-between z-10 flex-shrink-0 shadow-xs overflow-x-auto">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-400 mr-2 whitespace-nowrap">Widgets manuels :</span>
+          
+          <button onclick="createWidget('text')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-font text-lpi-pink"></i> + Texte (Word)
+          </button>
+
+          <button onclick="createWidget('quiz')" class="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-list-check text-purple-600"></i> + Quiz Kahoot
+          </button>
+
+          <button onclick="createWidget('ai-bot')" class="text-xs bg-lpi-pink/10 hover:bg-lpi-pink/20 text-lpi-pink font-bold px-3 py-1.5 rounded-xl border border-lpi-pink/30 flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-robot"></i> + Bot Tuteur Configurable
+          </button>
+
+          <button onclick="createWidget('video')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-video text-blue-600"></i> + Vidéo & Timestamps
+          </button>
+
+          <button onclick="createWidget('image')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-image text-amber-600"></i> + Photo & SVG
+          </button>
+
+          <button onclick="createWidget('eval-formative')" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition whitespace-nowrap">
+            <i class="fa-solid fa-square-check text-indigo-600"></i> + Éval Formative
+          </button>
+        </div>
+
+        <button onclick="clearCurrentCanvas()" class="text-xs text-slate-400 hover:text-rose-500 font-bold transition whitespace-nowrap ml-4">
+          <i class="fa-solid fa-eraser mr-1"></i> Réinitialiser
+        </button>
+      </div>
+
+      <!-- WORKSPACE PROF CANVA + BARRE MIRO -->
+      <div class="flex-1 flex overflow-hidden relative">
+        <div class="w-14 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-3 z-20 shadow-sm flex-shrink-0">
+          <button onclick="addStickyNote('#fef08a')" title="Post-it Jaune" class="w-8 h-8 rounded-lg bg-amber-200 hover:scale-110 border border-amber-300 transition shadow-xs"></button>
+          <button onclick="addStickyNote('#fbcfe8')" title="Post-it Rose" class="w-8 h-8 rounded-lg bg-pink-200 hover:scale-110 border border-pink-300 transition shadow-xs"></button>
+
+          <div class="w-8 h-px bg-slate-200 my-1"></div>
+
+          <button onclick="toggleDrawingMode('drawing-canvas')" id="btn-draw-mode" title="Crayon & Annotations libres" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition">
+            <i class="fa-solid fa-pen-nib text-xs"></i>
+          </button>
+
+          <button onclick="addFrameContainer()" title="Créer un Cadre de Regroupement (Frame)" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition">
+            <i class="fa-solid fa-vector-square text-xs"></i>
+          </button>
+
+          <button onclick="clearDrawings('drawing-canvas')" title="Effacer les dessins" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center transition">
+            <i class="fa-solid fa-eraser text-xs"></i>
+          </button>
+        </div>
+
+        <div class="flex-1 relative overflow-auto bg-lpi-lightBg canvas-grid" id="canvas-container">
+          <canvas id="drawing-canvas"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ==================== ÉTAPE 3 : FICHE INGÉNIERIE PÉDAGOGIQUE ==================== -->
+    <div id="tab-fiche" class="tab-content max-w-4xl mx-auto space-y-6 hidden">
+      <div class="flex justify-between items-center bg-white p-5 rounded-2xl shadow-sm border border-slate-200 no-print sticky top-0 z-30">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider bg-lpi-cyan/10 text-lpi-cyan px-3 py-1 rounded-full border border-lpi-cyan/20">
+            <i class="fa-solid fa-cubes mr-1"></i> Ingénierie Pédagogique par Bulles
+          </span>
+          <h1 class="text-xl font-black text-lpi-navy mt-1">Fiche Pédagogique de la Séquence</h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button onclick="exportToWordDocx()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-md flex items-center gap-2 text-xs transition">
+            <i class="fa-solid fa-file-word"></i> Exporter en Word (.docx)
+          </button>
+
+          <button onclick="window.print()" class="bg-lpi-pink hover:bg-lpi-pinkHover text-white font-bold px-4 py-2 rounded-xl shadow-md flex items-center gap-2 text-xs transition">
+            <i class="fa-solid fa-print"></i> Exporter en PDF / Imprimer
+          </button>
+        </div>
+      </div>
+
+      <div id="fiche-pedagogique-print" class="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 space-y-8 text-slate-800">
+        <div class="flex justify-between items-start border-b-2 border-lpi-yellow pb-6">
+          <div class="space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="bg-lpi-navy text-white font-black text-[10px] px-2.5 py-1 rounded-md uppercase">Fiche Ingénierie STEM</span>
+              <span id="fiche-level" class="bg-slate-100 text-slate-700 font-bold text-xs px-2.5 py-1 rounded-md">Cycle 4</span>
+            </div>
+            <h1 id="fiche-title" class="text-2xl font-black text-lpi-navy">Conception d'une Station Météo Connectée</h1>
+            <p id="fiche-duration" class="text-xs text-slate-500 font-bold">Volume Horaire : 12 heures (4 séances de 3h)</p>
+          </div>
+          <div class="text-right">
+            <span class="font-black text-lg text-lpi-navy block leading-none">Learning Planet</span>
+            <span class="text-xs font-bold text-lpi-yellow uppercase tracking-wider">Institute</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6">
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <h3 class="font-extrabold text-xs text-lpi-navy uppercase flex items-center gap-1.5"><i class="fa-solid fa-book text-lpi-pink"></i> Compétences BO Visées</h3>
+            <ul id="fiche-bo-list" class="text-xs space-y-1 font-mono text-slate-700"></ul>
+          </div>
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+            <h3 class="font-extrabold text-xs text-lpi-navy uppercase flex items-center gap-1.5"><i class="fa-solid fa-bullseye text-lpi-pink"></i> Objectifs (Bloom)</h3>
+            <p id="fiche-objectives" class="text-xs text-slate-700 leading-relaxed whitespace-pre-line"></p>
+          </div>
+        </div>
+
+        <div class="space-y-6 pt-4 border-t border-slate-200">
+          <div class="flex justify-between items-center">
+            <h2 class="text-base font-black text-lpi-navy flex items-center gap-2">
+              <i class="fa-solid fa-cubes text-lpi-pink"></i> Déroulé Pédagogique (Bulles Activités Modulaires)
+            </h2>
+            <button onclick="addActivityBubblePrompt()" class="no-print text-xs bg-lpi-pink hover:bg-lpi-pinkHover text-white font-bold px-3 py-2 rounded-xl transition flex items-center gap-1.5 shadow-xs">
+              <i class="fa-solid fa-plus"></i> Ajouter une Bulle Activité
+            </button>
+          </div>
+
+          <div id="activities-bubbles-container" class="space-y-6"></div>
+        </div>
+
+        <div class="space-y-4 pt-6 border-t border-slate-200">
+          <div class="flex justify-between items-center">
+            <h2 class="text-base font-black text-lpi-navy flex items-center gap-2">
+              <i class="fa-solid fa-graduation-cap text-lpi-pink"></i> Bilan Summatif Final des Compétences BO
+            </h2>
+            <span class="text-[10px] bg-slate-100 font-bold px-2.5 py-1 rounded-full text-slate-500">Avis Bulletin / SACoCHE / Qualiopi</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-lpi-navy text-white">
+                  <th class="p-2.5 rounded-tl-xl w-1/3">Compétence BO / Socle</th>
+                  <th class="p-2.5 w-1/3">Critères d'Évaluation & Livrables</th>
+                  <th class="p-2.5 rounded-tr-xl text-center w-1/3">Niveau de Maîtrise Atteint</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y border-x border-b rounded-b-xl bg-white" id="final-eval-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ==================== MODALE APPRENANT MIROIR ==================== -->
+  <div id="student-modal" class="fixed inset-0 bg-slate-900/85 backdrop-blur-md hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-slate-50 rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden relative">
+      
+      <div class="p-4 bg-lpi-navy text-white flex justify-between items-center flex-shrink-0 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <span class="bg-lpi-pink text-white font-black text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider">
+            <i class="fa-solid fa-eye mr-1"></i> Mode Élève Miroir
+          </span>
+          <h3 class="font-bold text-sm">Widgets Professeur Verrouillés + Outils Miro Élève Actifs</h3>
+        </div>
+
+        <button onclick="closeStudentPreviewModal()" class="text-slate-300 hover:text-white p-1 text-xl transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 flex overflow-hidden relative">
+        <div class="w-14 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-3 z-20 shadow-sm flex-shrink-0">
+          <button onclick="addStudentStickyNote('#bae6fd')" title="Déposer une question (Post-it Cyan)" class="w-8 h-8 rounded-lg bg-sky-200 hover:scale-110 border border-sky-300 transition shadow-xs"></button>
+          
+          <button onclick="toggleStudentDrawingMode()" id="btn-student-draw-mode" title="Annoter / Surligner au Crayon Élève" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition">
+            <i class="fa-solid fa-pen-nib text-xs text-sky-600"></i>
+          </button>
+
+          <button onclick="clearDrawings('student-drawing-canvas')" title="Effacer mes annotations" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center transition">
+            <i class="fa-solid fa-eraser text-xs"></i>
+          </button>
+        </div>
+
+        <div id="student-canvas-mirror" class="flex-1 relative overflow-auto bg-lpi-lightBg canvas-grid p-6">
+          <canvas id="student-drawing-canvas"></canvas>
+        </div>
+      </div>
+
+      <div class="p-3 bg-white border-t border-slate-200 flex justify-between items-center flex-shrink-0 z-20">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-500">Navigation guidée :</span>
+          <div id="student-steps-bullets" class="flex items-center gap-1.5"></div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="navigateStudentStep(-1)" class="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-3 py-1.5 rounded-xl text-xs transition">
+            <i class="fa-solid fa-chevron-left mr-1"></i> Précédent
+          </button>
+          <button onclick="navigateStudentStep(1)" class="bg-lpi-pink hover:bg-lpi-pinkHover text-white font-bold px-4 py-1.5 rounded-xl text-xs transition shadow-xs">
+            Suivant <i class="fa-solid fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== MODALE RÉFÉRENTIEL BO ENRICHIE PAR MATIÈRES ==================== -->
+  <div id="bo-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
+      
+      <div class="p-4 border-b border-slate-200 bg-lpi-navy text-white flex justify-between items-center flex-shrink-0">
+        <div>
+          <h3 class="font-bold text-base flex items-center gap-2">
+            <i class="fa-solid fa-book-open text-lpi-yellow"></i> Référentiel National BO & Disciplines STEM
+          </h3>
+          <p class="text-xs text-slate-300">Compétences transversales du Socle Commun + Compétences disciplinaires</p>
+        </div>
+        <button onclick="closeBOModal()" class="text-slate-300 hover:text-white p-2 text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- ONGLETS FIXES PAR MATIÈRE ET SOCLE COMMUN -->
+      <div class="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center gap-2 overflow-x-auto flex-shrink-0 z-10" id="bo-subject-tabs">
+        <button onclick="setDisciplineFilter('all')" id="tab-bo-all" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-lpi-navy text-white shadow-xs">
+          <i class="fa-solid fa-layer-group"></i> Toutes les matières
+        </button>
+        <button onclick="setDisciplineFilter('Compétences Générales')" id="tab-bo-gen" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i class="fa-solid fa-graduation-cap text-blue-600"></i> Socle Commun
+        </button>
+        <button onclick="setDisciplineFilter('Technologie')" id="tab-bo-tech" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i class="fa-solid fa-gears text-purple-600"></i> Technologie
+        </button>
+        <button onclick="setDisciplineFilter('Physique-Chimie')" id="tab-bo-pc" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i class="fa-solid fa-flask text-amber-600"></i> Physique-Chimie
+        </button>
+        <button onclick="setDisciplineFilter('SVT')" id="tab-bo-svt" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i class="fa-solid fa-dna text-teal-600"></i> SVT
+        </button>
+        <button onclick="setDisciplineFilter('Mathématiques')" id="tab-bo-math" class="disc-pill px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-slate-200 border border-slate-200">
+          <i class="fa-solid fa-calculator text-emerald-600"></i> Mathématiques
+        </button>
+      </div>
+
+      <div class="p-3 border-b border-slate-100 bg-white">
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+          <input type="text" id="bo-search" oninput="renderBOTree()" placeholder="Rechercher une compétence..." class="w-full pl-9 pr-4 py-1.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-lpi-yellow outline-none">
+        </div>
+      </div>
+
+      <div id="bo-tree-container" class="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50"></div>
+
+      <div class="p-4 border-t border-slate-200 bg-white flex justify-between items-center flex-shrink-0">
+        <span class="text-xs text-slate-500 font-bold" id="modal-selection-count">0 compétence(s) sélectionnée(s)</span>
+        <button onclick="closeBOModal()" class="bg-lpi-pink hover:bg-lpi-pinkHover text-white font-bold px-6 py-2 rounded-xl text-xs transition shadow-sm">
+          Valider la sélection
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SCRIPT JAVASCRIPT GLOBAL -->
+  <script>
+    let mistralApiKey = localStorage.getItem('mistral_api_key') || '';
+    let currentStudentStep = 1;
+    let isDrawingMode = false;
+    let isStudentDrawingMode = false;
+    let isDrawing = false;
+    let timerSeconds = 300;
+    let timerInterval = null;
+    let projectCount = 0;
+
+    // BASE DE DONNÉES EXHAUSTIVE BO : COMPÉTENCES GÉNÉRALES DU SOCLE + COMPÉTENCES DISCIPLINAIRES
+    const boFullDatabase = [
+      {
+        discipline: "Compétences Générales",
+        theme: "Domaine 1 : Les langages pour penser et communiquer",
+        items: [
+          { id: "gen_1", code: "SOC-D1.1", label: "S'exprimer à l'oral et à l'écrit de manière claire et argumentée dans un langage scientifique adapté." },
+          { id: "gen_2", code: "SOC-D1.2", label: "Passer d'un mode de représentation à un autre (schéma, graphique, tableau, texte, code)." },
+          { id: "gen_3", code: "SOC-D1.3", label: "Comprendre et produire des documents scientifiques et technologiques complexes." }
+        ]
+      },
+      {
+        discipline: "Compétences Générales",
+        theme: "Domaine 2 : Les méthodes et outils pour apprendre",
+        items: [
+          { id: "gen_4", code: "SOC-D2.1", label: "Mener une recherche d'information critique sur Internet et organiser ses données." },
+          { id: "gen_5", code: "SOC-D2.2", label: "Travailler en équipe, coopérer et partager les rôles au sein d'un projet de groupe." },
+          { id: "gen_6", code: "SOC-D2.3", label: "Planifier son travail, gérer son temps et tenir un carnet de bord de projet." }
+        ]
+      },
+      {
+        discipline: "Compétences Générales",
+        theme: "Domaine 4 : Les systèmes naturels et les systèmes techniques",
+        items: [
+          { id: "gen_7", code: "SOC-D4.1", label: "Pratiquer une démarche scientifique : formuler une hypothèse, concevoir et réaliser une expérience." },
+          { id: "gen_8", code: "SOC-D4.2", label: "Faire preuve d'esprit critique face aux résultats et analyser les sources d'erreur." }
+        ]
+      },
+      {
+        discipline: "Technologie",
+        theme: "Design, innovation et créativité",
+        items: [
+          { id: "tech_1", code: "MOT-1.1", label: "Identifier un besoin et énoncer un problème technique." },
+          { id: "tech_3", code: "MOT-1.3", label: "Créer des représentations numériques de tout ou partie d'un objet technique (Modélisation CAD / 3D)." }
+        ]
+      },
+      {
+        discipline: "Technologie",
+        theme: "Informatique et programmation",
+        items: [
+          { id: "tech_7", code: "IP-2.3", label: "Écrire, mettre au point un programme informatique pour commander un système." }
+        ]
+      },
+      {
+        discipline: "Physique-Chimie",
+        theme: "Organisation et transformations de la matière",
+        items: [
+          { id: "pc_2", code: "PC-1.2", label: "Mesurer des grandeurs physiques (masse, volume, température) avec les unités adaptées." }
+        ]
+      },
+      {
+        discipline: "SVT",
+        theme: "La Terre, l'environnement et l'action humaine",
+        items: [
+          { id: "svt_1", code: "SVT-1.1", label: "Expliquer les mécanismes météorologiques et climatiques fondamentaux." }
+        ]
+      },
+      {
+        discipline: "Mathématiques",
+        theme: "Organisation et gestion de données, fonctions",
+        items: [
+          { id: "math_1", code: "MATH-2.1", label: "Traiter et représenter des données statistiques sous forme de graphiques." }
+        ]
+      }
+    ];
+
+    let selectedBOIDs = new Set(["gen_5", "gen_7", "tech_7", "svt_1", "pc_2"]);
+    let currentDisciplineFilter = 'all';
+
+    let ficheActivityBubbles = [
+      {
+        id: "b_1",
+        sessionTitle: "Séance 1 : Câblage & Relevés Météo",
+        title: "Activité 1.1 : Câblage du capteur DHT11",
+        consignes: "1. Raccorder VCC sur 3.3V et GND sur la masse.\n2. Connecter le signal de données sur le Pin A0.\n3. Vérifier le retour de température sur la console."
+      }
+    ];
+
+    let sessionData = {
+      s1: {
+        title: "Séance 1 : Câblage & Relevés Météo",
+        activities: [
+          {
+            id: "act_1",
+            title: "Activité 1.1 : Câblage & Autonomie",
+            widgets: [
+              {
+                id: "w_text_demo",
+                stepOrder: 1,
+                type: "text",
+                left: 40, top: 40, width: 440, height: 380,
+                content: `<h2>Consignes de la séance</h2><p>Réaliser le <b>câblage du capteur DHT11</b> sur la carte Micro:bit selon le schéma.</p><ul><li>VCC sur broche <b>3.3V</b></li><li>GND sur broche <b>GND</b></li><li>DATA sur broche <b>P0</b></li></ul>`
+              },
+              {
+                id: "w_video_demo",
+                stepOrder: 2,
+                type: "video",
+                left: 500, top: 40, width: 440, height: 380,
+                videoUrl: "https://www.youtube.com/embed/tntOCGkgt98",
+                instruction: "Observer le tutoriel de câblage."
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    let currentSessionId = "s1";
+    let activeActivityId = "act_1";
+    let widgetCounter = 900;
+    let activeDragWidget = null;
+    let dragOffsetX = 0, dragOffsetY = 0;
+
+    function saveMistralKey(val) {
+      mistralApiKey = val.trim();
+      localStorage.setItem('mistral_api_key', mistralApiKey);
+      updateApiBadge();
+    }
+
+    function updateApiBadge() {
+      const badge = document.getElementById('api-status-badge');
+      if (mistralApiKey) {
+        badge.innerText = "API Prête";
+        badge.className = "text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full";
+      } else {
+        badge.innerText = "Clé non saisie";
+        badge.className = "text-[9px] bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full";
+      }
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('bg-lpi-yellow', 'text-lpi-navy');
+        btn.classList.add('text-slate-400');
+      });
+
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+      document.getElementById(`btn-${tabId}`).classList.add('bg-lpi-yellow', 'text-lpi-navy');
+
+      if (tabId === 'canva') renderCurrentCanvas();
+      if (tabId === 'fiche') updateFicheViewData();
+    }
+
+    function updateMainBOBadges() {
+      const container = document.getElementById('selected-bo-badges');
+      document.getElementById('selected-bo-count').innerText = selectedBOIDs.size;
+      document.getElementById('modal-selection-count').innerText = `${selectedBOIDs.size} compétence(s) sélectionnée(s)`;
+
+      if (selectedBOIDs.size === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">Aucune compétence sélectionnée.</span>`;
+        return;
+      }
+
+      let html = '';
+      boFullDatabase.forEach(group => {
+        group.items.forEach(item => {
+          if (selectedBOIDs.has(item.id)) {
+            const isGen = group.discipline === "Compétences Générales";
+            html += `
+              <span class="inline-flex items-center gap-1.5 ${isGen ? 'bg-lpi-pink/10 border-lpi-pink/30 text-lpi-pink font-bold' : 'bg-slate-100 border-slate-300 text-slate-800'} border text-xs px-2.5 py-1 rounded-lg">
+                <strong class="font-mono text-[10px]">${item.code}</strong>
+                <span class="truncate max-w-xs font-medium">${item.label}</span>
+                <button onclick="toggleBOSelection('${item.id}')" class="text-slate-400 hover:text-slate-700 ml-1">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </span>
+            `;
+          }
+        });
+      });
+      container.innerHTML = html;
+    }
+
+    function autoSelectBO() {
+      selectedBOIDs = new Set(["gen_5", "gen_7", "tech_7", "svt_1", "pc_2"]);
+      updateMainBOBadges();
+      addChatMessage('assistant', "🪄 **Pré-sélection IA appliquée :** Compétences du Socle Commun (*Travail en équipe, Démarche d'investigation*) + BO Disciplinaires !");
+    }
+
+    function toggleBOSelection(id) {
+      if (selectedBOIDs.has(id)) selectedBOIDs.delete(id); else selectedBOIDs.add(id);
+      updateMainBOBadges();
+      renderBOTree();
+    }
+
+    function renderBOTree() {
+      const container = document.getElementById('bo-tree-container');
+      const searchText = document.getElementById('bo-search').value.toLowerCase();
+      let html = '';
+
+      boFullDatabase.forEach(group => {
+        if (currentDisciplineFilter !== 'all' && group.discipline !== currentDisciplineFilter) return;
+
+        const matchingItems = group.items.filter(item => 
+          item.label.toLowerCase().includes(searchText) || 
+          item.code.toLowerCase().includes(searchText) ||
+          group.theme.toLowerCase().includes(searchText)
+        );
+
+        if (matchingItems.length === 0) return;
+
+        const isGenGroup = group.discipline === "Compétences Générales";
+
+        html += `
+          <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div class="px-4 py-2.5 ${isGenGroup ? 'bg-lpi-pink/10 text-lpi-pink' : 'bg-slate-100/80 text-slate-800'} border-b border-slate-200 font-bold text-xs flex justify-between items-center">
+              <span><strong>[${group.discipline}]</strong> ${group.theme}</span>
+              <span class="text-[10px] bg-white text-slate-600 px-2 py-0.5 rounded-full font-semibold shadow-xs">${matchingItems.length}</span>
+            </div>
+            <div class="p-2 space-y-1">
+              ${matchingItems.map(item => {
+                const isChecked = selectedBOIDs.has(item.id);
+                return `
+                  <label class="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 cursor-pointer text-xs transition ${isChecked ? 'bg-lpi-yellow/20 font-semibold' : ''}">
+                    <input type="checkbox" onchange="toggleBOSelection('${item.id}')" ${isChecked ? 'checked' : ''} class="mt-0.5 rounded border-slate-300 text-lpi-navy focus:ring-lpi-yellow">
+                    <div class="flex-1">
+                      <span class="font-mono text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold mr-1.5">${item.code}</span>
+                      <span class="text-slate-800">${item.label}</span>
+                    </div>
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html || `<div class="text-center py-8 text-xs text-slate-400">Aucune compétence trouvée.</div>`;
+    }
+
+    function setDisciplineFilter(disc) {
+      currentDisciplineFilter = disc;
+      renderBOTree();
+    }
+
+    function openBOModal() {
+      document.getElementById('bo-modal').classList.remove('hidden');
+      renderBOTree();
+    }
+
+    function closeBOModal() {
+      document.getElementById('bo-modal').classList.add('hidden');
+    }
+
+    // CHAT ET ASSISTANCE BLOOM IA
+    function askBloomHelp() {
+      addChatMessage('assistant', "🧠 **Analyse de la Taxonomie de Bloom :**\n- *Appliquer* : Programmation du capteur\n- *Analyser* : Traitement des données météorologiques\n- *Créer* : Modélisation 3D du boîtier\n\n💡 **Conseil LPI :** Vos objectifs couvrent parfaitement les 3 niveaux supérieurs de Bloom !");
+    }
+
+    function addChatMessage(role, text) {
+      const container = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = role === 'assistant' ? "bg-slate-50 border border-slate-200 text-slate-800 p-3 rounded-xl leading-relaxed" : "bg-lpi-navy text-white p-3 rounded-xl ml-6 leading-relaxed";
+      div.innerHTML = text.replace(/\n/g, '<br>');
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const val = input.value.trim();
+      if (!val) return;
+      addChatMessage('user', val);
+      input.value = '';
+
+      setTimeout(() => {
+        addChatMessage('assistant', `🤖 En réponse à "${val}" : L'alignement sur le BO et le Socle garantit une intégration conforme au Cycle 4.`);
+      }, 600);
+    }
+
+    function renderSessions() {
+      const container = document.getElementById('sessions-list');
+      const sampleSessions = [
+        { title: "Séance 1 : Investigation & Relevés de Capteurs", pillar: "Science", duration: "3h", desc: "Étude des grandeurs météo et câblage de la chaîne d'acquisition." },
+        { title: "Séance 2 : Programmation du Microcontrôleur", pillar: "Technology", duration: "3h", desc: "Écriture du code d'acquisition Python et traitement des signaux." }
+      ];
+
+      container.innerHTML = sampleSessions.map((s, idx) => `
+        <div class="border border-slate-200 rounded-xl p-4 bg-slate-50/80 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-3">
+            <span class="bg-lpi-yellow/30 text-lpi-navy text-[11px] font-bold px-2.5 py-0.5 rounded-full">${s.pillar}</span>
+            <input type="text" value="${s.title}" class="font-bold text-slate-800 text-sm bg-transparent border-b border-transparent hover:border-slate-300 focus:border-lpi-yellow outline-none w-full">
+            <span class="text-xs font-semibold text-slate-500 flex-shrink-0"><i class="fa-regular fa-clock"></i> ${s.duration}</span>
+          </div>
+          <textarea class="text-xs text-slate-600 bg-white border border-slate-200 focus:border-lpi-yellow rounded-lg p-2 outline-none">${s.desc}</textarea>
+        </div>
+      `).join('');
+    }
+
+    function addSession() {
+      alert("Nouvelle séance ajoutée dans la liste d'ingénierie.");
+    }
+
+    // STUDIO CANVA LMS ENGINE
+    function renderCurrentCanvas() {
+      const container = document.getElementById('canvas-container');
+      container.querySelectorAll('.draggable-widget').forEach(el => el.remove());
+
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (!activity) return;
+
+      activity.widgets.forEach(w => {
+        const card = document.createElement('div');
+        card.id = w.id;
+
+        if (w.type === 'frame') {
+          card.className = "draggable-widget border-2 border-dashed border-slate-300 bg-slate-50/30 rounded-3xl p-4 pointer-events-none";
+          card.style.left = `${w.left}px`; card.style.top = `${w.top}px`;
+          card.style.width = `${w.width}px`; card.style.height = `${w.height}px`;
+          card.innerHTML = `<span class="font-bold text-slate-400 text-xs uppercase tracking-wider">${w.title}</span>`;
+        } else if (w.type === 'sticky') {
+          card.className = "draggable-widget sticky-note rounded-2xl p-4 flex flex-col justify-between text-slate-800 text-xs font-semibold z-10";
+          card.style.backgroundColor = w.bgColor || '#fef08a';
+          card.style.left = `${w.left}px`; card.style.top = `${w.top}px`;
+          card.style.width = `${w.width}px`; card.style.height = `${w.height}px`;
+
+          card.innerHTML = `
+            <div class="flex justify-between items-center border-b border-black/10 pb-1 mb-2">
+              <span class="bg-black/10 text-slate-800 text-[10px] font-black px-1.5 py-0.5 rounded-full">${w.stepOrder}</span>
+              <button onclick="deleteWidget('${w.id}')" class="text-slate-500 hover:text-rose-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div contenteditable="true" class="flex-1 outline-none leading-relaxed">${w.content}</div>
+          `;
+        } else {
+          card.className = "draggable-widget bg-white rounded-2xl border border-slate-200 flex flex-col z-10";
+          card.style.left = `${w.left}px`; card.style.top = `${w.top}px`;
+          card.style.width = `${w.width}px`; card.style.height = `${w.height}px`;
+
+          card.innerHTML = `
+            <div class="widget-handle p-2.5 bg-slate-50 border-b border-slate-200 rounded-t-2xl flex items-center justify-between text-xs font-bold text-lpi-navy select-none" onmousedown="startDrag(event, '${w.id}')">
+              <div class="flex items-center gap-2">
+                <span class="bg-lpi-pink text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">${w.stepOrder || 1}</span>
+                <i class="${getWidgetIcon(w.type)}"></i>
+                <span>${getWidgetTitle(w.type)}</span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1 bg-white border border-slate-200 px-1.5 py-0.5 rounded-lg text-[10px]" title="Ordre de passage">
+                  <span class="text-slate-400 font-bold">Ordre :</span>
+                  <input type="number" min="1" max="99" value="${w.stepOrder || 1}" onchange="updateWidgetStepOrder('${w.id}', this.value)" class="w-7 font-black text-center outline-none bg-transparent">
+                </div>
+                <button onclick="deleteWidget('${w.id}')" class="text-slate-400 hover:text-rose-600 px-1 py-0.5 transition"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            </div>
+            <div class="flex-1 p-3 overflow-y-auto">${getWidgetBodyHTML(w)}</div>
+          `;
+        }
+
+        container.appendChild(card);
+      });
+    }
+
+    function getWidgetIcon(type) {
+      if (type === 'text') return 'fa-solid fa-font text-lpi-pink';
+      if (type === 'quiz') return 'fa-solid fa-list-check text-purple-600';
+      if (type === 'ai-bot') return 'fa-solid fa-robot text-lpi-pink';
+      if (type === 'video') return 'fa-solid fa-video text-blue-600';
+      if (type === 'image') return 'fa-solid fa-image text-amber-600';
+      return 'fa-solid fa-square-check text-indigo-600';
+    }
+
+    function getWidgetTitle(type) {
+      if (type === 'text') return 'Widget Texte (Format Word)';
+      if (type === 'quiz') return 'Widget Quiz Kahoot';
+      if (type === 'ai-bot') return 'Bot Tuteur Configurable';
+      if (type === 'video') return 'Lecteur Vidéo & Timestamps';
+      if (type === 'image') return 'Photo & SVG';
+      return 'Évaluation Formative';
+    }
+
+    function getWidgetBodyHTML(w) {
+      if (w.type === 'text') {
+        return `
+          <div class="flex flex-col h-full space-y-2">
+            <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border text-xs select-none">
+              <button onclick="execWordCmd('${w.id}', 'bold')" class="p-1 font-bold" title="Gras"><i class="fa-solid fa-bold"></i></button>
+              <button onclick="execWordCmd('${w.id}', 'italic')" class="p-1 italic" title="Italique"><i class="fa-solid fa-italic"></i></button>
+              <button onclick="execWordCmd('${w.id}', 'underline')" class="p-1 underline" title="Souligné"><i class="fa-solid fa-underline"></i></button>
+            </div>
+            <div id="editor-content-${w.id}" contenteditable="true" oninput="saveTextWidgetContent('${w.id}')" class="rich-editor flex-1 p-2 border rounded-xl overflow-y-auto text-xs leading-relaxed outline-none">
+              ${w.content || ''}
+            </div>
+          </div>
+        `;
+      } else if (w.type === 'video') {
+        return `<div class="bg-black aspect-video rounded-xl overflow-hidden mb-2"><iframe src="${w.videoUrl}" class="w-full h-full" frameborder="0" allowfullscreen></iframe></div><p class="font-bold text-slate-700 text-xs">${w.instruction || ''}</p>`;
+      }
+      return `<div class="text-xs text-slate-500">Contenu interactif</div>`;
+    }
+
+    function execWordCmd(widgetId, cmd) {
+      const editor = document.getElementById(`editor-content-${widgetId}`);
+      if (!editor) return;
+      editor.focus();
+      document.execCommand(cmd, false, null);
+    }
+
+    function saveTextWidgetContent(widgetId) {
+      const editor = document.getElementById(`editor-content-${widgetId}`);
+      if (!editor) return;
+      const w = getWidgetById(widgetId);
+      if (w) w.content = editor.innerHTML;
+    }
+
+    function createWidget(type) {
+      widgetCounter++;
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (!activity) return;
+
+      activity.widgets.push({
+        id: `w_${type}_${widgetCounter}`,
+        stepOrder: activity.widgets.length + 1,
+        type: type,
+        left: 60 + (activity.widgets.length * 20),
+        top: 50 + (activity.widgets.length * 15),
+        width: 440, height: 380,
+        content: "Nouveau contenu..."
+      });
+      renderCurrentCanvas();
+    }
+
+    function deleteWidget(wId) {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (activity) {
+        activity.widgets = activity.widgets.filter(w => w.id !== wId);
+        renderCurrentCanvas();
+      }
+    }
+
+    function clearCurrentCanvas() {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (activity) { activity.widgets = []; renderCurrentCanvas(); }
+    }
+
+    function startDrag(e, widgetId) {
+      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.rich-editor')) return;
+      activeDragWidget = document.getElementById(widgetId);
+      const rect = activeDragWidget.getBoundingClientRect();
+      dragOffsetX = e.clientX - rect.left;
+      dragOffsetY = e.clientY - rect.top;
+      document.addEventListener('mousemove', onDrag);
+      document.addEventListener('mouseup', stopDrag);
+    }
+
+    function onDrag(e) {
+      if (!activeDragWidget) return;
+      const container = document.getElementById('canvas-container');
+      const cRect = container.getBoundingClientRect();
+      let x = e.clientX - cRect.left - dragOffsetX;
+      let y = e.clientY - cRect.top - dragOffsetY;
+      activeDragWidget.style.left = `${Math.max(10, x)}px`;
+      activeDragWidget.style.top = `${Math.max(10, y)}px`;
+
+      const w = getWidgetById(activeDragWidget.id);
+      if (w) { w.left = x; w.top = y; }
+    }
+
+    function stopDrag() { activeDragWidget = null; }
+
+    function getWidgetById(wId) {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      return activity ? activity.widgets.find(w => w.id === wId) : null;
+    }
+
+    function addStickyNote(colorHex) {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (!activity) return;
+
+      activity.widgets.push({
+        id: `sticky_${Date.now()}`,
+        stepOrder: activity.widgets.length + 1,
+        type: "sticky",
+        left: 80, top: 80, width: 220, height: 200,
+        bgColor: colorHex,
+        content: "Post-it prof..."
+      });
+      renderCurrentCanvas();
+    }
+
+    function addFrameContainer() {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (!activity) return;
+
+      activity.widgets.push({
+        id: `frame_${Date.now()}`,
+        stepOrder: activity.widgets.length + 1,
+        type: "frame",
+        left: 20, top: 20, width: 960, height: 800,
+        title: "📦 Cadre d'Activité : Découverte"
+      });
+      renderCurrentCanvas();
+    }
+
+    function generateCanvaArchitectureFromPrompt() {
+      alert("🪄 Génération de l'architecture de la scène par Mistral AI...");
+    }
+
+    function reorderWidgetsByPassage() {
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+      if (activity) {
+        activity.widgets.sort((a, b) => (a.stepOrder || 1) - (b.stepOrder || 1));
+        renderCurrentCanvas();
+      }
+    }
+
+    // CANVAS DESSIN
+    function toggleDrawingMode(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      canvas.classList.toggle('active');
+      if (canvas.classList.contains('active')) {
+        initDrawing(canvasId, '#FF2E63');
+      }
+    }
+
+    function toggleStudentDrawingMode() {
+      const canvas = document.getElementById('student-drawing-canvas');
+      canvas.classList.toggle('active');
+      if (canvas.classList.contains('active')) {
+        initDrawing('student-drawing-canvas', '#00D2D3');
+      }
+    }
+
+    function initDrawing(canvasId, colorHex) {
+      const canvas = document.getElementById(canvasId);
+      const parent = canvas.parentElement;
+      canvas.width = parent.scrollWidth || 1800;
+      canvas.height = parent.scrollHeight || 1400;
+
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = colorHex;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+
+      canvas.onmousedown = (e) => {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        ctx.beginPath();
+        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+      };
+
+      canvas.onmousemove = (e) => {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+        ctx.stroke();
+      };
+
+      canvas.onmouseup = () => { isDrawing = false; };
+    }
+
+    function clearDrawings(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // TIMER
+    function toggleTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        document.getElementById('btn-timer-toggle').innerText = "Reprendre";
+      } else {
+        timerInterval = setInterval(() => {
+          if (timerSeconds > 0) {
+            timerSeconds--;
+            updateTimerDisplay();
+          } else clearInterval(timerInterval);
+        }, 1000);
+        document.getElementById('btn-timer-toggle').innerText = "Pause";
+      }
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      timerSeconds = 300;
+      updateTimerDisplay();
+      document.getElementById('btn-timer-toggle').innerText = "Démarrer";
+    }
+
+    function updateTimerDisplay() {
+      const m = String(Math.floor(timerSeconds / 60)).padStart(2, '0');
+      const s = String(timerSeconds % 60).padStart(2, '0');
+      document.getElementById('timer-display').innerText = `${m}:${s}`;
+    }
+
+    // APERÇU ÉLÈVE MIROIR
+    function openStudentPreviewModal() {
+      const modal = document.getElementById('student-modal');
+      const mirror = document.getElementById('student-canvas-mirror');
+      mirror.querySelectorAll('.draggable-widget').forEach(el => el.remove());
+
+      const session = sessionData[currentSessionId];
+      const activity = session ? session.activities.find(a => a.id === activeActivityId) : null;
+
+      if (activity) {
+        activity.widgets.forEach(w => {
+          const card = document.createElement('div');
+          card.className = "draggable-widget bg-white rounded-2xl border p-4 shadow-sm";
+          card.style.left = `${w.left}px`; card.style.top = `${w.top}px`;
+          card.style.width = `${w.width}px`; card.style.height = `${w.height}px`;
+
+          card.innerHTML = `
+            <div class="font-bold text-xs mb-2 flex items-center justify-between text-lpi-navy">
+              <span class="bg-lpi-pink text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">${w.stepOrder || 1}</span>
+              <span class="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">🔒 Verrouillé</span>
+            </div>
+            ${getWidgetBodyHTML(w)}
+          `;
+          mirror.appendChild(card);
+        });
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeStudentPreviewModal() {
+      document.getElementById('student-modal').classList.add('hidden');
+    }
+
+    function addStudentStickyNote(colorHex) {
+      const mirror = document.getElementById('student-canvas-mirror');
+      const card = document.createElement('div');
+      card.className = "draggable-widget sticky-note rounded-2xl p-4 text-xs font-semibold z-30 shadow-md";
+      card.style.backgroundColor = colorHex;
+      card.style.left = "180px"; card.style.top = "180px"; card.style.width = "220px"; card.style.height = "200px";
+      card.innerHTML = `<span class="bg-sky-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">Question Élève</span><div contenteditable="true" class="outline-none mt-2">Remarque...</div>`;
+      mirror.appendChild(card);
+    }
+
+    // FICHE PÉDAGOGIQUE
+    function updateFicheViewData() {
+      document.getElementById('fiche-title').innerText = document.getElementById('project-title').value;
+      document.getElementById('fiche-duration').innerText = `Volume Horaire : ${document.getElementById('project-duration').value}`;
+      document.getElementById('fiche-objectives').innerText = document.getElementById('project-objectives').value;
+
+      const boList = document.getElementById('fiche-bo-list');
+      let boHtml = '';
+      let evalTableHtml = '';
+
+      boFullDatabase.forEach(g => g.items.forEach(i => {
+        if (selectedBOIDs.has(i.id)) {
+          boHtml += `<li>• [${i.code}] ${i.label}</li>`;
+          evalTableHtml += `
+            <tr>
+              <td class="p-2.5 font-bold text-slate-800">${g.discipline}</td>
+              <td class="p-2.5 text-slate-600">[${i.code}] ${i.label}</td>
+              <td class="p-2.5 text-center font-mono text-[10px]">
+                [ ] Non acq. | [ ] Fragile | [ ] Satisf. | [ ] Très bon
+              </td>
+            </tr>
+          `;
+        }
+      }));
+
+      boList.innerHTML = boHtml || '<li>• Aucune compétence sélectionnée</li>';
+      document.getElementById('final-eval-table-body').innerHTML = evalTableHtml;
+      renderActivityBubbles();
+    }
+
+    function renderActivityBubbles() {
+      const container = document.getElementById('activities-bubbles-container');
+      container.innerHTML = ficheActivityBubbles.map((b, idx) => `
+        <div class="activity-bubble p-5 space-y-4">
+          <div class="flex justify-between items-start border-b pb-3">
+            <div>
+              <span class="text-[10px] font-bold text-lpi-cyan uppercase block">${b.sessionTitle}</span>
+              <input type="text" value="${b.title}" class="font-black text-slate-800 text-sm w-full bg-transparent outline-none">
+            </div>
+          </div>
+          <textarea rows="2" class="w-full border rounded-xl p-2 text-xs leading-relaxed outline-none">${b.consignes || ''}</textarea>
+        </div>
+      `).join('');
+    }
+
+    function addActivityBubblePrompt() {
+      ficheActivityBubbles.push({
+        id: `b_${Date.now()}`,
+        sessionTitle: "Séance 1",
+        title: `Activité ${ficheActivityBubbles.length + 1}`,
+        consignes: "Consignes..."
+      });
+      renderActivityBubbles();
+    }
+
+    function exportToWordDocx() { alert("Exportation Word (.docx)..."); }
+
+    function publishProject() {
+      projectCount++;
+      document.getElementById('published-count').innerText = projectCount;
+      alert("🎉 Séquence publiée avec succès au LPI !");
+    }
+
+    window.onload = () => {
+      updateApiBadge();
+      updateMainBOBadges();
+      renderSessions();
+    };
+  </script>
+</body>
+</html>
